@@ -21,7 +21,6 @@ LEAGUE_STYLES = {
     "Varsayılan": {"xg_mod": 1.0, "korner_mod": 1.0, "tac_mod": 1.0, "kart_mod": 1.0, "faul_mod": 1.0, "tarz": "Standart Futbol"}
 }
 
-# SADECE ANA VE 2. LİGLERİ İÇEREN HIZLI TARAMA LİSTESİ (BEYAZ LİSTE)
 HIZLI_TARAMA_LIGLERI = [
     "premier league", "championship", "la liga", "segunda", "serie a", "serie b",
     "bundesliga", "2. bundesliga", "ligue 1", "ligue 2", "süper lig", "1. lig",
@@ -73,7 +72,6 @@ def takim_degeri_hesapla(guc_puani, league_coef):
     raw_val = max(10.0, min(1400.0, base))
     return raw_val, f"€{raw_val:.1f}M"
 
-# --- POISSON MOTORU VE MATRİS ---
 def poisson(k, lambd): return (lambd**k * math.exp(-lambd)) / math.factorial(k)
 
 def gol_yuku_hesapla(g_for, g_ag):
@@ -195,7 +193,6 @@ def yan_bahisleri_hesapla(toplam_xg, lig_karakteristik, hakem_profil, hoca_ev, h
         "faul": round(((22.5 * lig_karakteristik["faul_mod"] * hakem_profil["faul_carpan"])) * carpan, 1)
     }
 
-# --- API VE VERİ FONKSİYONLARI ---
 @st.cache_data(ttl=43200)
 def api_football_gercek_veri_getir(api_key):
     now_tr = datetime.now(timezone.utc) + timedelta(hours=3)
@@ -271,7 +268,6 @@ def kadro_durumu_ve_getir(api_key, fixture_id, h_id, a_id):
     except: pass
     return {"resmi": durum, "h_kadro": h_kadro, "a_kadro": a_kadro}
 
-# HIZLANDIRILMIŞ (N+1 SORUNSUZ) SAKAT/CEZALI FONKSİYONU
 @st.cache_data(ttl=43200)
 def sakat_cezali_cek(api_key, fixture_id, h_id, a_id, season):
     headers, url = {"x-apisports-key": api_key}, f"https://v3.football.api-sports.io/injuries?fixture={fixture_id}"
@@ -282,13 +278,13 @@ def sakat_cezali_cek(api_key, fixture_id, h_id, a_id, season):
         if res.status_code == 200:
             for inj in res.json().get("response", []):
                 t_id, p_name = inj.get("team", {}).get("id"), inj.get("player", {}).get("name")
-                agirlik, etiket = 0.5, "🟠 Sakat/Eksik"
+                agirlik, etiket = 0.5, "🟠 Sakat"
                 if t_id == h_id: 
                     h_agirlik += agirlik
-                    h_onemli.append(f"{p_name} ({etiket})")
+                    h_onemli.append(f"{p_name}")
                 elif t_id == a_id: 
                     a_agirlik += agirlik
-                    a_onemli.append(f"{p_name} ({etiket})")
+                    a_onemli.append(f"{p_name}")
     except: pass
     return {"h_agirlik": h_agirlik, "a_agirlik": a_agirlik, "h_onemli": h_onemli, "a_onemli": a_onemli}
 
@@ -424,7 +420,6 @@ def tekil_mac_analizi_yap(api_key, mac_obj, lig_karakteristik):
         "en_iyi_bahis": en_iyi, "surprizler": en_iyi_surprizler
     }
 
-# --- GÖRSEL KUTULAR ---
 def stat_kutu_olustur(baslik, oran1, yazi1, oran2, yazi2, icon="⚽", renk="#60a5fa"):
     return f"""<div style="border: 1px solid #1e3a8a; border-radius: 10px; padding: 20px; text-align: center; background-color: #0f172a; height: 100%;">
         <div style="color: {renk}; font-weight: 700; margin-bottom: 20px;">{icon} {baslik}</div>
@@ -469,8 +464,6 @@ def render_taktik_kutu(zaman_baslik, m, yan, ev_sahibi, deplasman):
     with c_alt3: st.markdown(alt_stat_kutu(f"Taç", f"{math.floor(yan['tac'])}.5 Üst", "#60a5fa", "📐"), unsafe_allow_html=True)
     with c_alt4: st.markdown(alt_stat_kutu(f"Faul", f"~{int(yan['faul'])}", "#ec4899", "🛑"), unsafe_allow_html=True)
 
-
-# --- ARAYÜZ BAŞLANGICI ---
 st.set_page_config(page_title="Pro Analiz Paneli", page_icon="⚽", layout="wide")
 USER_API_KEY = "899fcc53c659a6bb3dac4ff1ef7b211a"
 bulten_verisi, aktif_kaynak = api_football_gercek_veri_getir(USER_API_KEY)
@@ -481,7 +474,6 @@ if not bulten_verisi:
 
 col_sol, col_sag = st.columns([1, 3])
 
-# --- SOL MENÜ (MAÇ SEÇİMİ VE SIFIRLAMA MANTIĞI) ---
 with col_sol:
     st.markdown("### 🔍 Takım veya Maç Ara")
     arama_sorgusu = st.text_input("Örn: Arsenal, Galatasaray", placeholder="Takım adı yazın...")
@@ -520,8 +512,6 @@ with col_sol:
 
     secilen_mac_obj = next((m for m in lig_bilgi["maclar"] if m["metin"] == secilen_mac_metni), lig_bilgi["maclar"][0])
 
-
-# --- SAĞ MENÜ (ANALİZ EKRANI) ---
 with col_sag:
     ev_sahibi, deplasman = secilen_mac_obj["ev"], secilen_mac_obj["dep"]
     hakem_adi = secilen_mac_obj["referee"]
@@ -566,7 +556,6 @@ with col_sag:
                 }
                 st.session_state["analiz_yapildi"] = True
 
-    # SEKMELER
     tab_genel, tab_iy, tab_ikinci_yari, tab_ms, tab_value, tab_top_value, tab_surpriz = st.tabs([
         "🎯 Genel Rapor", "⏱️ 1. Yarı", "⏱️ 2. Yarı", "🏆 Maç Sonu", 
         "💎 Value Bahis", "🌟 Tüm Ligler Top Value", "🔮 Sürpriz Tahminler"
@@ -738,7 +727,6 @@ with col_sag:
         else:
             st.info("👆 Seçili maçın verilerini görmek için yukarıdaki 'V125 Master Mind Analizini Başlat' butonuna tıklayın.")
                 
-    # --- TÜM LİGLER GLOBAL TOP VALUE ---
     with tab_top_value:
         st.markdown("### 🏆 Hızlı Tarama: Sadece Profesyonel Ana Ligler ve 2. Ligler")
         st.info("Bu araç; Premier Lig, La Liga, Serie A, Süper Lig gibi majör ligler ve onların 2. liglerine odaklanarak hızlandırılmış bir tarama yapar.")
@@ -748,16 +736,12 @@ with col_sag:
                 tum_maclar_listesi = []
                 sirali_ligler_keys = ligleri_sirala(list(bulten_verisi.keys()))
                 
-                # SADECE BELİRLENEN KALİTELİ LİGLERİ İÇERİ AL
                 for l_adi in sirali_ligler_keys:
                     l_adi_kucuk = l_adi.lower()
-                    
                     if not any(kriter in l_adi_kucuk for kriter in HIZLI_TARAMA_LIGLERI):
                         continue
-                        
                     if any(x in l_adi_kucuk for x in ["u19", "u21", "u20", "u23", "women", "kadınlar", "reserve", "amateur", "gençler", "paf", "youth"]):
                         continue
-                        
                     tum_maclar_listesi.extend(bulten_verisi[l_adi]["maclar"])
                 
                 firsatlar = []
@@ -777,21 +761,21 @@ with col_sag:
                                 "saat": m_obj['saat'],
                                 "bahis": m_analiz["en_iyi_bahis"]["bahis"],
                                 "ihtimal": m_analiz["en_iyi_bahis"]["ihtimal"],
-                                "h_eksik": len(m_analiz["sakatlar"]["h_onemli"]), # Ev sahibi eksik sayısı eklendi
-                                "a_eksik": len(m_analiz["sakatlar"]["a_onemli"])  # Deplasman eksik sayısı eklendi
+                                "h_eksikler": m_analiz["sakatlar"]["h_onemli"],
+                                "a_eksikler": m_analiz["sakatlar"]["a_onemli"]
                             })
                             
                     if firsatlar:
                         firsatlar = sorted(firsatlar, key=lambda x: x["ihtimal"], reverse=True)
                         st.success(f"🚀 Hızlı Tarama Tamamlandı! {len(tum_maclar_listesi)} elit maç arasından çıkan en güçlü tahminler:")
                         for idx, f in enumerate(firsatlar[:15]): 
-                            # Eğer takımlardan birinde sakat varsa bunu görsel olarak render et
-                            eksik_bilgisi = f" <span style='font-size:11px; color:#ef4444; margin-left:10px;'>(🚑 Eksik: Ev {f['h_eksik']} - Dep {f['a_eksik']})</span>" if (f['h_eksik'] > 0 or f['a_eksik'] > 0) else ""
-                            st.markdown(f"**{idx+1}. {f['mac']}** <span style='font-size:12px; color:#9ca3af;'>({f['lig']} - 🕒 {f['saat']})</span> ➔ **{f['bahis']}** (İhtimal: <span style='color:#34d399;'>%{f['ihtimal']*100:.1f}</span>){eksik_bilgisi}", unsafe_allow_html=True)
+                            h_str = ", ".join(f['h_eksikler']) if f['h_eksikler'] else "Yok"
+                            a_str = ", ".join(f['a_eksikler']) if f['a_eksikler'] else "Yok"
+                            eksik_metni = f" <span style='font-size:11px; color:#ef4444; margin-left:8px;'>(🚑 Ev: {h_str} | Dep: {a_str})</span>" if (f['h_eksikler'] or f['a_eksikler']) else ""
+                            st.markdown(f"**{idx+1}. {f['mac']}** <span style='font-size:12px; color:#9ca3af;'>({f['lig']} - 🕒 {f['saat']})</span> ➔ **{f['bahis']}** (İhtimal: <span style='color:#34d399;'>%{f['ihtimal']*100:.1f}</span>){eksik_metni}", unsafe_allow_html=True)
                     else:
                         st.warning("Taranan elit liglerde değerlendirmeye uygun güçlü bir bahis bulunamadı.")
                     
-    # --- SÜRPRİZ TAHMİNLER ---
     with tab_surpriz:
         st.markdown("### 🔮 Hızlı Tarama: Sürpriz Tahmin Avcısı")
         st.info("Sadece 1. ve 2. profesyonel ligleri baz alarak; 1'den 2, 2'den 1, İlk Yarı KG Var ve 6+ Gol gibi yüksek oranlı ihtimalleri hesaplar.")
@@ -801,7 +785,6 @@ with col_sag:
                 tum_maclar_listesi = []
                 sirali_ligler_keys = ligleri_sirala(list(bulten_verisi.keys()))
                 
-                # SADECE BEYAZ LİSTE FİLTRESİ
                 for l_adi in sirali_ligler_keys:
                     l_adi_kucuk = l_adi.lower()
                     if not any(kriter in l_adi_kucuk for kriter in HIZLI_TARAMA_LIGLERI):
@@ -811,7 +794,7 @@ with col_sag:
                     tum_maclar_listesi.extend(bulten_verisi[l_adi]["maclar"])
                 
                 if not tum_maclar_listesi:
-                    st.warning("Şu anki bültende belirlediğimiz elit liglerden maç bulunmamaktadır.")
+                    st.warning("Şu anki bültende belirlediğimiz elit liglerden maç bulunamadı.")
                 else:
                     liste_1_2 = []
                     liste_2_1 = []
@@ -829,46 +812,48 @@ with col_sag:
                             lig_adi = [k for k, v in bulten_verisi.items() if m_obj in v["maclar"]][0]
                             s = m_analiz["surprizler"]
                             
-                            h_eksik_sayisi = len(m_analiz["sakatlar"]["h_onemli"])
-                            a_eksik_sayisi = len(m_analiz["sakatlar"]["a_onemli"])
+                            h_eksikler = m_analiz["sakatlar"]["h_onemli"]
+                            a_eksikler = m_analiz["sakatlar"]["a_onemli"]
                             
                             if s["1/2"] > 0.02:
-                                liste_1_2.append({"mac": mac_adi, "lig": lig_adi, "saat": m_obj['saat'], "oran": s["1/2"], "h_eksik": h_eksik_sayisi, "a_eksik": a_eksik_sayisi})
+                                liste_1_2.append({"mac": mac_adi, "lig": lig_adi, "saat": m_obj['saat'], "oran": s["1/2"], "h_eksikler": h_eksikler, "a_eksikler": a_eksikler})
                             if s["2/1"] > 0.02:
-                                liste_2_1.append({"mac": mac_adi, "lig": lig_adi, "saat": m_obj['saat'], "oran": s["2/1"], "h_eksik": h_eksik_sayisi, "a_eksik": a_eksik_sayisi})
+                                liste_2_1.append({"mac": mac_adi, "lig": lig_adi, "saat": m_obj['saat'], "oran": s["2/1"], "h_eksikler": h_eksikler, "a_eksikler": a_eksikler})
                             if s["iy_kg"] > 0.35:
-                                liste_iy_kg.append({"mac": mac_adi, "lig": lig_adi, "saat": m_obj['saat'], "oran": s["iy_kg"], "h_eksik": h_eksik_sayisi, "a_eksik": a_eksik_sayisi})
+                                liste_iy_kg.append({"mac": mac_adi, "lig": lig_adi, "saat": m_obj['saat'], "oran": s["iy_kg"], "h_eksikler": h_eksikler, "a_eksikler": a_eksikler})
                             if s["ust_55"] > 0.08:
-                                liste_ust_55.append({"mac": mac_adi, "lig": lig_adi, "saat": m_obj['saat'], "oran": s["ust_55"], "h_eksik": h_eksik_sayisi, "a_eksik": a_eksik_sayisi})
+                                liste_ust_55.append({"mac": mac_adi, "lig": lig_adi, "saat": m_obj['saat'], "oran": s["ust_55"], "h_eksikler": h_eksikler, "a_eksikler": a_eksikler})
                                 
                     st.success(f"🚀 Sürpriz Taraması Tamamlandı! {len(tum_maclar_listesi)} elit maç içinden en yüksek potansiyelliler:")
                     
-                    def render_eksik_gorseli(f):
-                        return f" <span style='font-size:10px; color:#ef4444; margin-left:5px;'>(🚑 Ev {f['h_eksik']} - Dep {f['a_eksik']})</span>" if (f['h_eksik'] > 0 or f['a_eksik'] > 0) else ""
+                    def render_eksik_detay(f):
+                        h_str = ", ".join(f['h_eksikler']) if f['h_eksikler'] else "Yok"
+                        a_str = ", ".join(f['a_eksikler']) if f['a_eksikler'] else "Yok"
+                        return f" <span style='font-size:10px; color:#ef4444; margin-left:5px;'>(🚑 Ev: {h_str} | Dep: {a_str})</span>" if (f['h_eksikler'] or f['a_eksikler']) else ""
 
                     col1, col2 = st.columns(2)
                     with col1:
                         st.markdown("#### 🔄 1'den 2 (İlk Yarı 1 / Maç Sonu 2)")
                         liste_1_2.sort(key=lambda x: x["oran"], reverse=True)
                         for f in liste_1_2[:5]:
-                            st.markdown(f"**{f['mac']}** <span style='font-size:11px;color:#9ca3af;'>({f['lig']})</span> ➔ İhtimal: <span style='color:#fbbf24;'>%{f['oran']*100:.1f}</span>{render_eksik_gorseli(f)}", unsafe_allow_html=True)
+                            st.markdown(f"**{f['mac']}** <span style='font-size:11px;color:#9ca3af;'>({f['lig']})</span> ➔ İhtimal: <span style='color:#fbbf24;'>%{f['oran']*100:.1f}</span>{render_eksik_detay(f)}", unsafe_allow_html=True)
                         if not liste_1_2: st.write("Kriterlere uygun maç bulunamadı.")
                         
                         st.markdown("#### 🔄 2'den 1 (İlk Yarı 2 / Maç Sonu 1)")
                         liste_2_1.sort(key=lambda x: x["oran"], reverse=True)
                         for f in liste_2_1[:5]:
-                            st.markdown(f"**{f['mac']}** <span style='font-size:11px;color:#9ca3af;'>({f['lig']})</span> ➔ İhtimal: <span style='color:#fbbf24;'>%{f['oran']*100:.1f}</span>{render_eksik_gorseli(f)}", unsafe_allow_html=True)
+                            st.markdown(f"**{f['mac']}** <span style='font-size:11px;color:#9ca3af;'>({f['lig']})</span> ➔ İhtimal: <span style='color:#fbbf24;'>%{f['oran']*100:.1f}</span>{render_eksik_detay(f)}", unsafe_allow_html=True)
                         if not liste_2_1: st.write("Kriterlere uygun maç bulunamadı.")
                         
                     with col2:
                         st.markdown("#### ⚽ İY Karşılıklı Gol Var")
                         liste_iy_kg.sort(key=lambda x: x["oran"], reverse=True)
                         for f in liste_iy_kg[:5]:
-                            st.markdown(f"**{f['mac']}** <span style='font-size:11px;color:#9ca3af;'>({f['lig']})</span> ➔ İhtimal: <span style='color:#34d399;'>%{f['oran']*100:.1f}</span>{render_eksik_gorseli(f)}", unsafe_allow_html=True)
+                            st.markdown(f"**{f['mac']}** <span style='font-size:11px;color:#9ca3af;'>({f['lig']})</span> ➔ İhtimal: <span style='color:#34d399;'>%{f['oran']*100:.1f}</span>{render_eksik_detay(f)}", unsafe_allow_html=True)
                         if not liste_iy_kg: st.write("Kriterlere uygun maç bulunamadı.")
                         
                         st.markdown("#### 🚀 6+ Gol (5.5 Üst)")
                         liste_ust_55.sort(key=lambda x: x["oran"], reverse=True)
                         for f in liste_ust_55[:5]:
-                            st.markdown(f"**{f['mac']}** <span style='font-size:11px;color:#9ca3af;'>({f['lig']})</span> ➔ İhtimal: <span style='color:#ef4444;'>%{f['oran']*100:.1f}</span>{render_eksik_gorseli(f)}", unsafe_allow_html=True)
+                            st.markdown(f"**{f['mac']}** <span style='font-size:11px;color:#9ca3af;'>({f['lig']})</span> ➔ İhtimal: <span style='color:#ef4444;'>%{f['oran']*100:.1f}</span>{render_eksik_detay(f)}", unsafe_allow_html=True)
                         if not liste_ust_55: st.write("Kriterlere uygun maç bulunamadı.")
