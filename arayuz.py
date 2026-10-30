@@ -64,6 +64,7 @@ def takim_degeri_hesapla(guc_puani, league_coef):
 
 # --- POISSON MOTORU VE MATRİS ---
 def poisson(k, lambd): return (lambd**k * math.exp(-lambd)) / math.factorial(k)
+
 def gol_yuku_hesapla(g_for, g_ag):
     toplam = g_for + g_ag
     if toplam >= 3.5: return 1.40
@@ -71,9 +72,17 @@ def gol_yuku_hesapla(g_for, g_ag):
     elif toplam <= 1.8: return 0.85
     return 1.0
 
-def skor_olasiliklarini_hesapla(ev_xg, dep_xg, ev_gol_yuku=1.0, dep_gol_yuku=1.0, is_kupa=False, ev_yorgun=False):
+def skor_olasiliklarini_hesapla(ev_xg, dep_xg, ev_gol_yuku=1.0, dep_gol_yuku=1.0, is_kupa=False, ev_yorgun=False, yari_modu=0):
     if is_kupa or ev_yorgun: dep_xg *= 1.15
     ev_dinamik_xg, dep_dinamik_xg = ev_xg * ev_gol_yuku, dep_xg * dep_gol_yuku
+    
+    if yari_modu == 1:
+        ev_dinamik_xg *= 0.52
+        dep_dinamik_xg *= 0.52
+    elif yari_modu == 2:
+        ev_dinamik_xg *= 0.65
+        dep_dinamik_xg *= 0.65
+
     ev_olasiliklar = [poisson(i, ev_dinamik_xg) for i in range(10)]
     dep_olasiliklar = [poisson(i, dep_dinamik_xg) for i in range(10)]
     
@@ -82,26 +91,39 @@ def skor_olasiliklarini_hesapla(ev_xg, dep_xg, ev_gol_yuku=1.0, dep_gol_yuku=1.0
     if dep_dinamik_xg > 1.8:
         for i in range(4, 10): dep_olasiliklar[i] *= 1.4
 
-    p1 = pX = p2 = kg_var = ust_25 = ust_15 = ust_05 = ust_35 = 0
+    p1 = pX = p2 = kg_var = ust_55 = ust_35 = ust_25 = ust_15 = ust_05 = 0
     en_olasi_skor, en_yuksek_ihtimal = "0 - 0", 0
-    ev_gol_tahmin, dep_gol_tahmin = ev_olasiliklar.index(max(ev_olasiliklar)), dep_olasiliklar.index(max(dep_olasiliklar))
+    ev_gol_tahmin, dep_gol_tahmin = 0, 0
     
     skor_matrisi = [[0.0 for _ in range(6)] for _ in range(6)]
 
     for i in range(10):
         for j in range(10):
             ihtimal = ev_olasiliklar[i] * dep_olasiliklar[j]
-            if (ev_dinamik_xg + dep_dinamik_xg) < 2.5:
+            if (ev_dinamik_xg + dep_dinamik_xg) < 2.5 and yari_modu == 0:
                 if i == 0 and j == 0: ihtimal *= 1.15
                 elif i == 1 and j == 1: ihtimal *= 1.10
             
             if i < 6 and j < 6: skor_matrisi[i][j] = ihtimal
-            if ihtimal > en_yuksek_ihtimal: en_yuksek_ihtimal, en_olasi_skor, ev_gol_tahmin, dep_gol_tahmin = ihtimal, f"{i} - {j}", i, j
+                
+    if yari_modu == 1 and (ev_dinamik_xg + dep_dinamik_xg) > 0.8:
+        sifir_sifir_dususu = skor_matrisi[0][0] * 0.20 
+        skor_matrisi[0][0] -= sifir_sifir_dususu
+        skor_matrisi[1][0] += sifir_sifir_dususu * 0.50 
+        skor_matrisi[0][1] += sifir_sifir_dususu * 0.30 
+        skor_matrisi[1][1] += sifir_sifir_dususu * 0.20 
+
+    for i in range(6):
+        for j in range(6):
+            ihtimal = skor_matrisi[i][j]
+            if ihtimal > en_yuksek_ihtimal: 
+                en_yuksek_ihtimal, en_olasi_skor, ev_gol_tahmin, dep_gol_tahmin = ihtimal, f"{i} - {j}", i, j
                 
             if i > j: p1 += ihtimal
             elif i == j: pX += ihtimal
             else: p2 += ihtimal
             if i > 0 and j > 0: kg_var += ihtimal
+            if (i + j) > 5.5: ust_55 += ihtimal
             if (i + j) > 3.5: ust_35 += ihtimal
             if (i + j) > 2.5: ust_25 += ihtimal
             if (i + j) > 1.5: ust_15 += ihtimal
@@ -113,25 +135,45 @@ def skor_olasiliklarini_hesapla(ev_xg, dep_xg, ev_gol_yuku=1.0, dep_gol_yuku=1.0
     matris_toplam = sum(sum(row) for row in skor_matrisi)
     if matris_toplam > 0: skor_matrisi = [[val / matris_toplam for val in row] for row in skor_matrisi]
 
-    if ust_35 > 0.40 and (ev_gol_tahmin + dep_gol_tahmin) <= 3:
-        if ev_dinamik_xg > dep_dinamik_xg: en_olasi_skor = f"{ev_gol_tahmin + 1} - {dep_gol_tahmin}"
-        elif dep_dinamik_xg > ev_dinamik_xg: en_olasi_skor = f"{ev_gol_tahmin} - {dep_gol_tahmin + 1}"
-        else: en_olasi_skor = "2 - 2"
-    elif ust_25 > 0.55 and (ev_gol_tahmin + dep_gol_tahmin) <= 2:
-        if ev_dinamik_xg > dep_dinamik_xg: en_olasi_skor = f"{ev_gol_tahmin + 1} - {dep_gol_tahmin}"
-        elif dep_dinamik_xg > ev_dinamik_xg: en_olasi_skor = f"{ev_gol_tahmin} - {dep_gol_tahmin + 1}"
-        else: en_olasi_skor = "1 - 1"
+    if yari_modu == 0:
+        if ust_35 > 0.40 and (ev_gol_tahmin + dep_gol_tahmin) <= 3:
+            if ev_dinamik_xg > dep_dinamik_xg: en_olasi_skor = f"{ev_gol_tahmin + 1} - {dep_gol_tahmin}"
+            elif dep_dinamik_xg > ev_dinamik_xg: en_olasi_skor = f"{ev_gol_tahmin} - {dep_gol_tahmin + 1}"
+            else: en_olasi_skor = "2 - 2"
+        elif ust_25 > 0.55 and (ev_gol_tahmin + dep_gol_tahmin) <= 2:
+            if ev_dinamik_xg > dep_dinamik_xg: en_olasi_skor = f"{ev_gol_tahmin + 1} - {dep_gol_tahmin}"
+            elif dep_dinamik_xg > ev_dinamik_xg: en_olasi_skor = f"{ev_gol_tahmin} - {dep_gol_tahmin + 1}"
+            else: en_olasi_skor = "1 - 1"
     
     return {
-        "p1": p1, "pX": pX, "p2": p2, "kg_var": kg_var, "ust_35": ust_35, "ust_25": ust_25, "ust_15": ust_15, "ust_05": ust_05,
-        "skor": en_olasi_skor, "ev_05_ust": 1 - ev_olasiliklar[0], "ev_15_ust": 1 - (ev_olasiliklar[0] + ev_olasiliklar[1]),
-        "dep_05_ust": 1 - dep_olasiliklar[0], "dep_15_ust": 1 - (dep_olasiliklar[0] + dep_olasiliklar[1]),
+        "p1": p1, "pX": pX, "p2": p2, "kg_var": kg_var, "ust_55": ust_55, "ust_35": ust_35, "ust_25": ust_25, "ust_15": ust_15, "ust_05": ust_05,
+        "skor": en_olasi_skor, 
+        "ev_05_ust": 1 - (skor_matrisi[0][0] + skor_matrisi[0][1] + skor_matrisi[0][2]),
+        "dep_05_ust": 1 - (skor_matrisi[0][0] + skor_matrisi[1][0] + skor_matrisi[2][0]),
         "matris": skor_matrisi
     }
 
-def skor_dagit(ms_skor_str):
-    ev_ms, dep_ms = map(int, ms_skor_str.replace(" ", "").split("-"))
-    return f"{math.ceil(ev_ms * 0.45)} - {math.ceil(dep_ms * 0.45)}", f"{ev_ms - math.ceil(ev_ms * 0.45)} - {dep_ms - math.ceil(dep_ms * 0.45)}"
+def surpriz_ihtimalleri_hesapla(iy_matris, iy2_matris):
+    ht1_ft2 = 0.0
+    ht2_ft1 = 0.0
+    for i in range(6):
+        for j in range(6):
+            iy_prob = iy_matris[i][j]
+            if iy_prob < 0.001: continue
+            for k in range(6):
+                for l in range(6):
+                    iy2_prob = iy2_matris[k][l]
+                    if iy2_prob < 0.001: continue
+                    
+                    ms_ev = i + k
+                    ms_dep = j + l
+                    
+                    if i > j and ms_ev < ms_dep:
+                        ht1_ft2 += iy_prob * iy2_prob
+                    if i < j and ms_ev > ms_dep:
+                        ht2_ft1 += iy_prob * iy2_prob
+                        
+    return round(ht1_ft2, 4), round(ht2_ft1, 4)
 
 def yan_bahisleri_hesapla(toplam_xg, lig_karakteristik, hakem_profil, hoca_ev, hoca_dep, carpan):
     hoca_korner = (hoca_ev["korner_carpan"] + hoca_dep["korner_carpan"]) / 2
@@ -206,7 +248,7 @@ def kadro_durumu_ve_getir(api_key, fixture_id, h_id, a_id):
     h_kadro, a_kadro = [], []
     durum = False
     try:
-        res = requests.get(url, headers=headers, timeout=4)
+        res = requests.get(url, headers=headers, timeout=3)
         data = res.json().get("response", [])
         if data:
             durum = True
@@ -216,36 +258,10 @@ def kadro_durumu_ve_getir(api_key, fixture_id, h_id, a_id):
                 if t_id == h_id: h_kadro = startXI
                 elif t_id == a_id: a_kadro = startXI
     except: pass
-
-    # Resmi kadro yoksa takımların son oynadıkları maçtaki 11'lerini tahmini olarak getirir
-    if not durum:
-        try:
-            h_res = requests.get(f"https://v3.football.api-sports.io/fixtures?team={h_id}&last=1", headers=headers, timeout=3).json().get("response", [])
-            if h_res:
-                l_res = requests.get(f"https://v3.football.api-sports.io/fixtures/lineups?fixture={h_res[0]['fixture']['id']}", headers=headers, timeout=3).json().get("response", [])
-                for td in l_res:
-                    if td.get("team", {}).get("id") == h_id: h_kadro = [p.get("player", {}).get("name") for p in td.get("startXI", [])]
-        except: pass
-        try:
-            a_res = requests.get(f"https://v3.football.api-sports.io/fixtures?team={a_id}&last=1", headers=headers, timeout=3).json().get("response", [])
-            if a_res:
-                l_res = requests.get(f"https://v3.football.api-sports.io/fixtures/lineups?fixture={a_res[0]['fixture']['id']}", headers=headers, timeout=3).json().get("response", [])
-                for td in l_res:
-                    if td.get("team", {}).get("id") == a_id: a_kadro = [p.get("player", {}).get("name") for p in td.get("startXI", [])]
-        except: pass
-
     return {"resmi": durum, "h_kadro": h_kadro, "a_kadro": a_kadro}
 
-@st.cache_data(ttl=86400)
-def oyuncu_ilk11_sayisi(api_key, player_id, season):
-    if not player_id or not season: return 0
-    url, headers = f"https://v3.football.api-sports.io/players?id={player_id}&season={season}", {"x-apisports-key": api_key}
-    try:
-        res = requests.get(url, headers=headers, timeout=2)
-        if res.status_code == 200 and res.json().get("response"):
-            return sum([s.get("games", {}).get("lineups", 0) or 0 for s in res.json()["response"][0].get("statistics", [])])
-    except: pass
-    return 0
+# YAVAŞLIĞA SEBEP OLAN OYUNCU_ILK11_SAYISI FONKSİYONU SİLİNDİ!
+# N+1 SORGU PROBLEMİ ÇÖZÜLDÜ. 
 
 @st.cache_data(ttl=43200)
 def sakat_cezali_cek(api_key, fixture_id, h_id, a_id, season):
@@ -253,20 +269,20 @@ def sakat_cezali_cek(api_key, fixture_id, h_id, a_id, season):
     h_agirlik = a_agirlik = 0.0
     h_onemli, a_onemli = [], []
     try:
-        res = requests.get(url, headers=headers, timeout=5)
+        res = requests.get(url, headers=headers, timeout=3) # Timeout düşürüldü
         if res.status_code == 200:
             for inj in res.json().get("response", []):
-                t_id, p_id, p_name = inj.get("team", {}).get("id"), inj.get("player", {}).get("id"), inj.get("player", {}).get("name")
-                ilk11_sayisi = oyuncu_ilk11_sayisi(api_key, p_id, season)
-                if ilk11_sayisi >= 5: agirlik, etiket = 1.0, "🔴 As"
-                elif ilk11_sayisi >= 2: agirlik, etiket = 0.5, "🟠 Rotasyon"
-                else: agirlik, etiket = 0.2, "🟢 Yedek"
+                t_id, p_name = inj.get("team", {}).get("id"), inj.get("player", {}).get("name")
+                
+                # HIZLANDIRMA: Her oyuncu için API'ye tekrar bağlanmak yerine sabit değer atanıyor.
+                agirlik, etiket = 0.5, "🟠 Sakat/Eksik"
+                
                 if t_id == h_id: 
                     h_agirlik += agirlik
-                    if agirlik >= 0.5: h_onemli.append(f"{p_name} ({etiket})")
+                    h_onemli.append(f"{p_name} ({etiket})")
                 elif t_id == a_id: 
                     a_agirlik += agirlik
-                    if agirlik >= 0.5: a_onemli.append(f"{p_name} ({etiket})")
+                    a_onemli.append(f"{p_name} ({etiket})")
     except: pass
     return {"h_agirlik": h_agirlik, "a_agirlik": a_agirlik, "h_onemli": h_onemli, "a_onemli": a_onemli}
 
@@ -275,7 +291,7 @@ def gercek_takim_istatistiklerini_cek(api_key, team_id, is_home):
     headers = {"x-apisports-key": api_key}
     url = f"https://v3.football.api-sports.io/fixtures?team={team_id}&last=25"
     try:
-        res = requests.get(url, headers=headers, timeout=5)
+        res = requests.get(url, headers=headers, timeout=4)
         if res.status_code == 200:
             matches = res.json().get("response", [])
             bitmis_maclar = [m for m in matches if m.get("fixture", {}).get("status", {}).get("short") in ["FT", "AET", "PEN"]]
@@ -320,15 +336,6 @@ def gercek_takim_istatistiklerini_cek(api_key, team_id, is_home):
             g_for_saha, g_ag_saha, form_saha_5 = analiz_et([m for m in bitmis_maclar if (m["teams"]["home"]["id"] == team_id and is_home) or (m["teams"]["away"]["id"] == team_id and not is_home)][:5], team_id)
             
             sahte_gol_carpani = 1.0
-            try:
-                stat_url = f"https://v3.football.api-sports.io/fixtures/statistics?fixture={bitmis_maclar[0]['fixture']['id']}&team={team_id}"
-                stat_res = requests.get(stat_url, headers=headers, timeout=3)
-                if stat_res.status_code == 200 and stat_res.json().get("response"):
-                    sot = next((int(i["value"]) for i in stat_res.json()["response"][0].get("statistics", []) if i["type"] == "Shots on Goal" and i["value"]), 0)
-                    last_goals = bitmis_maclar[0]["goals"]["home"] if bitmis_maclar[0]["teams"]["home"]["id"] == team_id else bitmis_maclar[0]["goals"]["away"]
-                    if last_goals and last_goals >= 2 and sot < last_goals: sahte_gol_carpani = 0.85
-            except: pass
-
             return {
                 "g_for_saha": g_for_saha, "g_ag_saha": g_ag_saha, "g_for_genel": g_for_genel, "g_ag_genel": g_ag_genel,
                 "form_10": form_10, "form_saha_5": form_saha_5, "main_league": main_league_name, "league_coef": league_coef,
@@ -341,7 +348,7 @@ def gercek_takim_istatistiklerini_cek(api_key, team_id, is_home):
 def aralarindaki_maclari_cek(api_key, h_id, a_id):
     headers, url = {"x-apisports-key": api_key}, f"https://v3.football.api-sports.io/fixtures/headtohead?h2h={h_id}-{a_id}&last=5"
     try:
-        res = requests.get(url, headers=headers, timeout=5)
+        res = requests.get(url, headers=headers, timeout=3)
         if res.status_code == 200:
             bitmis = [m for m in res.json().get("response", []) if m.get("fixture", {}).get("status", {}).get("short") in ["FT", "AET", "PEN"]]
             if not bitmis: return None
@@ -350,6 +357,66 @@ def aralarindaki_maclari_cek(api_key, h_id, a_id):
             return {"h_avg": h_tg / len(bitmis), "a_avg": a_tg / len(bitmis), "count": len(bitmis)}
     except: pass
     return None
+
+def tekil_mac_analizi_yap(api_key, mac_obj, lig_karakteristik):
+    ev_data = gercek_takim_istatistiklerini_cek(api_key, mac_obj["h_id"], True)
+    dep_data = gercek_takim_istatistiklerini_cek(api_key, mac_obj["a_id"], False)
+    if not ev_data or not dep_data: return None
+    
+    h2h_data = aralarindaki_maclari_cek(api_key, mac_obj["h_id"], mac_obj["a_id"])
+    sakatlar = sakat_cezali_cek(api_key, mac_obj["id"], mac_obj["h_id"], mac_obj["a_id"], mac_obj["season"])
+    is_kupa = mac_obj["l_id"] in [45, 143, 141, 137, 529] or "kupa" in mac_obj["metin"].lower() or "cup" in mac_obj["metin"].lower()
+
+    ev_guc_puani = ((ev_data["g_for_genel"]+0.1)/(ev_data["g_ag_genel"]+0.1)) * ev_data["league_coef"] * max(1.0 - (sakatlar["h_agirlik"]*0.05), 0.65)
+    dep_guc_puani = ((dep_data["g_for_genel"]+0.1)/(dep_data["g_ag_genel"]+0.1)) * dep_data["league_coef"] * max(1.0 - (sakatlar["a_agirlik"]*0.05), 0.65)
+    
+    ort_guc = (ev_guc_puani + dep_guc_puani) / 2
+    ev_guc_carpani, dep_guc_carpani = min(max(ev_guc_puani/ort_guc, 0.2), 3.0), min(max(dep_guc_puani/ort_guc, 0.2), 3.0)
+    
+    hoca_ev = hoca_analizi_yap(mac_obj["ev"])
+    hoca_dep = hoca_analizi_yap(mac_obj["dep"])
+
+    ev_temel_xg = ((ev_data["g_for_saha"]+dep_data["g_ag_saha"])/2) * lig_karakteristik["xg_mod"] * hoca_ev["xg_carpan"] * ev_guc_carpani
+    dep_temel_xg = ((dep_data["g_for_saha"]+ev_data["g_ag_saha"])/2) * lig_karakteristik["xg_mod"] * hoca_dep["xg_carpan"] * dep_guc_carpani
+    
+    if is_kupa:
+        if ev_guc_carpani > 1.8: ev_temel_xg *= 0.75
+        if dep_guc_carpani > 1.8: dep_temel_xg *= 0.75
+    
+    ev_gercek_xg = max(0.1, (ev_temel_xg*0.7) + (h2h_data["h_avg"]*0.3)) if h2h_data else max(0.1, ev_temel_xg)
+    dep_gercek_xg = max(0.1, (dep_temel_xg*0.7) + (h2h_data["a_avg"]*0.3)) if h2h_data else max(0.1, dep_temel_xg)
+    
+    ev_g_yuku, dep_g_yuku = gol_yuku_hesapla(ev_data["g_for_genel"], ev_data["g_ag_genel"]), gol_yuku_hesapla(dep_data["g_for_genel"], dep_data["g_ag_genel"])
+    ev_yorgun = ev_data["dinlenme_gunu"] < 4
+
+    ms_m = skor_olasiliklarini_hesapla(ev_gercek_xg, dep_gercek_xg, ev_g_yuku, dep_g_yuku, is_kupa, ev_yorgun, yari_modu=0)
+    iy_m = skor_olasiliklarini_hesapla(ev_gercek_xg, dep_gercek_xg, ev_g_yuku, dep_g_yuku, is_kupa, ev_yorgun, yari_modu=1)
+    iy2_m = skor_olasiliklarini_hesapla(ev_gercek_xg, dep_gercek_xg, ev_g_yuku, dep_g_yuku, is_kupa, ev_yorgun, yari_modu=2)
+    
+    ht1_ft2, ht2_ft1 = surpriz_ihtimalleri_hesapla(iy_m['matris'], iy2_m['matris'])
+    en_iyi_surprizler = {
+        "1/2": ht1_ft2,
+        "2/1": ht2_ft1,
+        "iy_kg": iy_m['kg_var'],
+        "ust_55": ms_m['ust_55']
+    }
+    
+    secenekler = []
+    if ms_m['p1'] > 0.55: secenekler.append({"bahis": f"MS 1 ({mac_obj['ev']})", "ihtimal": ms_m['p1']})
+    elif ms_m['p2'] > 0.50: secenekler.append({"bahis": f"MS 2 ({mac_obj['dep']})", "ihtimal": ms_m['p2']})
+    if ms_m['ust_35'] > 0.45: secenekler.append({"bahis": "3.5 Gol Üstü", "ihtimal": ms_m['ust_35']})
+    elif ms_m['ust_25'] > 0.55: secenekler.append({"bahis": "2.5 Gol Üstü", "ihtimal": ms_m['ust_25']})
+    elif (1 - ms_m['ust_25']) > 0.65: secenekler.append({"bahis": "2.5 Gol Altı", "ihtimal": (1 - ms_m['ust_25'])})
+    if ms_m['kg_var'] > 0.60: secenekler.append({"bahis": "Karşılıklı Gol Var", "ihtimal": ms_m['kg_var']})
+    
+    en_iyi = sorted(secenekler, key=lambda x: x["ihtimal"], reverse=True)[0] if secenekler else {"bahis": "Yok", "ihtimal": 0}
+    
+    return {
+        "ev_data": ev_data, "dep_data": dep_data, "h2h_data": h2h_data, "sakatlar": sakatlar,
+        "ev_xg": ev_gercek_xg, "dep_xg": dep_gercek_xg, "ev_guc_puani": ev_guc_puani, "dep_guc_puani": dep_guc_puani,
+        "hoca_ev": hoca_ev, "hoca_dep": hoca_dep, "ms_m": ms_m, "iy_m": iy_m, "iy2_m": iy2_m, 
+        "en_iyi_bahis": en_iyi, "surprizler": en_iyi_surprizler
+    }
 
 # --- GÖRSEL KUTULAR ---
 def stat_kutu_olustur(baslik, oran1, yazi1, oran2, yazi2, icon="⚽", renk="#60a5fa"):
@@ -385,9 +452,9 @@ def render_taktik_kutu(zaman_baslik, m, yan, ev_sahibi, deplasman):
     """, unsafe_allow_html=True)
     
     c1, c2, c3 = st.columns(3)
-    with c1: st.markdown(stat_kutu_olustur(f"{ev_sahibi} Golü", f"%{m['ev_05_ust']*100:.1f}", "0.5 Üst Olasılığı", f"%{m['ev_15_ust']*100:.1f}", "1.5 Üst Olasılığı", "🛡️"), unsafe_allow_html=True)
-    with c2: st.markdown(stat_kutu_olustur("Toplam Gol", f"%{m['ust_05']*100:.1f}", "2.5 Üst Olasılığı", f"%{m['ust_25']*100:.1f}", "3.5 Üst Olasılığı", "⚽"), unsafe_allow_html=True)
-    with c3: st.markdown(stat_kutu_olustur(f"{deplasman} Golü", f"%{m['dep_05_ust']*100:.1f}", "0.5 Üst Olasılığı", f"%{m['dep_15_ust']*100:.1f}", "1.5 Üst Olasılığı", "✈️"), unsafe_allow_html=True)
+    with c1: st.markdown(stat_kutu_olustur(f"{ev_sahibi} Golü", f"%{m['ev_05_ust']*100:.1f}", "0.5 Üst Olasılığı", f"%{(1-m['ev_05_ust'])*100:.1f}", "0.5 Alt Olasılığı", "🛡️"), unsafe_allow_html=True)
+    with c2: st.markdown(stat_kutu_olustur("Toplam Gol", f"%{m['ust_05']*100:.1f}", "0.5 Üst Olasılığı", f"%{m['ust_15']*100:.1f}", "1.5 Üst Olasılığı", "⚽"), unsafe_allow_html=True)
+    with c3: st.markdown(stat_kutu_olustur(f"{deplasman} Golü", f"%{m['dep_05_ust']*100:.1f}", "0.5 Üst Olasılığı", f"%{(1-m['dep_05_ust'])*100:.1f}", "0.5 Alt Olasılığı", "✈️"), unsafe_allow_html=True)
     
     st.write("")
     c_alt1, c_alt2, c_alt3, c_alt4 = st.columns(4)
@@ -396,15 +463,19 @@ def render_taktik_kutu(zaman_baslik, m, yan, ev_sahibi, deplasman):
     with c_alt3: st.markdown(alt_stat_kutu(f"Taç", f"{math.floor(yan['tac'])}.5 Üst", "#60a5fa", "📐"), unsafe_allow_html=True)
     with c_alt4: st.markdown(alt_stat_kutu(f"Faul", f"~{int(yan['faul'])}", "#ec4899", "🛑"), unsafe_allow_html=True)
 
+
 # --- ARAYÜZ BAŞLANGICI ---
 st.set_page_config(page_title="Pro Analiz Paneli", page_icon="⚽", layout="wide")
 USER_API_KEY = "899fcc53c659a6bb3dac4ff1ef7b211a"
 bulten_verisi, aktif_kaynak = api_football_gercek_veri_getir(USER_API_KEY)
 
-if not bulten_verisi: st.error("Maç bulunamadı."); st.stop()
+if not bulten_verisi: 
+    st.error("Maç bulunamadı.")
+    st.stop()
 
 col_sol, col_sag = st.columns([1, 3])
 
+# --- SOL MENÜ (MAÇ SEÇİMİ VE SIFIRLAMA MANTIĞI) ---
 with col_sol:
     st.markdown("### 🔍 Takım veya Maç Ara")
     arama_sorgusu = st.text_input("Örn: Arsenal, Galatasaray", placeholder="Takım adı yazın...")
@@ -414,16 +485,21 @@ with col_sol:
         if eslesen: filtrelenmis_ligler[l_adi] = {"logo": l_data["logo"], "maclar": eslesen}
     
     gosterilecek_veri = filtrelenmis_ligler if arama_sorgusu else bulten_verisi
-    if not gosterilecek_veri: st.warning("Maç bulunamadı."); st.stop()
+    if not gosterilecek_veri: 
+        st.warning("Maç bulunamadı.")
+        st.stop()
 
     sirali_ligler = ligleri_sirala(list(gosterilecek_veri.keys()))
-    if "secili_lig" not in st.session_state or st.session_state["secili_lig"] not in sirali_ligler: st.session_state["secili_lig"] = sirali_ligler[0]
+    if "secili_lig" not in st.session_state or st.session_state["secili_lig"] not in sirali_ligler: 
+        st.session_state["secili_lig"] = sirali_ligler[0]
 
     st.markdown("### 📋 Lig ve Maç Seçimi")
+    
     secilen_lig = st.selectbox("Lig Seçiniz:", sirali_ligler, index=sirali_ligler.index(st.session_state["secili_lig"]))
     if secilen_lig != st.session_state["secili_lig"]:
         st.session_state["secili_lig"] = secilen_lig
         st.session_state["secili_mac_metni"] = gosterilecek_veri[secilen_lig]["maclar"][0]["metin"]
+        st.session_state["analiz_yapildi"] = False
         st.rerun()
 
     lig_bilgi = gosterilecek_veri[secilen_lig]
@@ -433,10 +509,13 @@ with col_sol:
     secilen_mac_metni = st.selectbox("Maç Seçiniz:", mac_metinleri, index=mac_idx)
     if secilen_mac_metni != st.session_state.get("secili_mac_metni"):
         st.session_state["secili_mac_metni"] = secilen_mac_metni
+        st.session_state["analiz_yapildi"] = False
         st.rerun()
 
     secilen_mac_obj = next((m for m in lig_bilgi["maclar"] if m["metin"] == secilen_mac_metni), lig_bilgi["maclar"][0])
 
+
+# --- SAĞ MENÜ (ANALİZ EKRANI) ---
 with col_sag:
     ev_sahibi, deplasman = secilen_mac_obj["ev"], secilen_mac_obj["dep"]
     hakem_adi = secilen_mac_obj["referee"]
@@ -449,64 +528,43 @@ with col_sag:
         <div style="text-align:center;flex:1;"><img src="{secilen_mac_obj['dep_logo']}" height="65" style="margin-bottom:8px;"><h3 style="color:#fff;margin:0;">{deplasman}</h3></div>
     </div>""", unsafe_allow_html=True)
 
-    tab_genel, tab_iy, tab_ikinci_yari, tab_ms, tab_value = st.tabs(["🎯 Genel Rapor", "⏱️ 1. Yarı", "⏱️ 2. Yarı", "🏆 Maç Sonu", "💎 Value Bahis"])
-
-    if st.button("🚀 V125 Master Mind Analizini Başlat", use_container_width=True, type="primary"):
-        with st.spinner("Tüm veriler, İlk 11 Kadroları, Yorgunluk ve Matris hesaplanıyor..."):
-            ev_data = gercek_takim_istatistiklerini_cek(USER_API_KEY, secilen_mac_obj["h_id"], True)
-            dep_data = gercek_takim_istatistiklerini_cek(USER_API_KEY, secilen_mac_obj["a_id"], False)
-            h2h_data = aralarindaki_maclari_cek(USER_API_KEY, secilen_mac_obj["h_id"], secilen_mac_obj["a_id"])
-            sakatlar = sakat_cezali_cek(USER_API_KEY, secilen_mac_obj["id"], secilen_mac_obj["h_id"], secilen_mac_obj["a_id"], secilen_mac_obj["season"])
-            
-            is_kupa = any(k in secilen_lig.lower() for k in ["kupa", "cup", "pokal", "trophy", "coppa", "copa"])
-            h_sira_str, a_sira_str, h_rank_int, a_rank_int = puan_durumu_cek(USER_API_KEY, secilen_mac_obj["l_id"], secilen_mac_obj["season"], secilen_mac_obj["h_id"], secilen_mac_obj["a_id"]) if not is_kupa else ("Kupa Maçı", "Kupa Maçı", 999, 999)
-            kadro_verisi = kadro_durumu_ve_getir(USER_API_KEY, secilen_mac_obj["id"], secilen_mac_obj["h_id"], secilen_mac_obj["a_id"])
-            
-            if ev_data and dep_data:
-                hakem_profil, hoca_ev, hoca_dep = hakem_analizi_yap(hakem_adi), hoca_analizi_yap(ev_sahibi), hoca_analizi_yap(deplasman)
+    if st.button("🚀 Seçili Maç İçin V125 Master Mind Analizini Başlat", use_container_width=True, type="primary"):
+        with st.spinner(f"{ev_sahibi} - {deplasman} maçı için veriler işleniyor..."):
+            d_analiz = tekil_mac_analizi_yap(USER_API_KEY, secilen_mac_obj, lig_karakteristik)
+            if d_analiz:
+                is_kupa = any(k in secilen_lig.lower() for k in ["kupa", "cup", "pokal", "trophy", "coppa", "copa"])
+                h_sira_str, a_sira_str, h_rank_int, a_rank_int = puan_durumu_cek(USER_API_KEY, secilen_mac_obj["l_id"], secilen_mac_obj["season"], secilen_mac_obj["h_id"], secilen_mac_obj["a_id"]) if not is_kupa else ("Kupa Maçı", "Kupa Maçı", 999, 999)
+                kadro_verisi = kadro_durumu_ve_getir(USER_API_KEY, secilen_mac_obj["id"], secilen_mac_obj["h_id"], secilen_mac_obj["a_id"])
+                
+                hakem_profil = hakem_analizi_yap(hakem_adi)
                 hava_ad, hava_carpan, hava_detay = hash_tabanli_cevresel_veri(str(secilen_mac_obj["id"]))
                 
-                ev_guc_puani = ((ev_data["g_for_genel"]+0.1)/(ev_data["g_ag_genel"]+0.1)) * ev_data["league_coef"] * max(1.0 - (sakatlar["h_agirlik"]*0.05), 0.65)
-                dep_guc_puani = ((dep_data["g_for_genel"]+0.1)/(dep_data["g_ag_genel"]+0.1)) * dep_data["league_coef"] * max(1.0 - (sakatlar["a_agirlik"]*0.05), 0.65)
+                ev_deger_raw, ev_deger_str = takim_degeri_hesapla(d_analiz["ev_guc_puani"], d_analiz["ev_data"]["league_coef"])
+                dep_deger_raw, dep_deger_str = takim_degeri_hesapla(d_analiz["dep_guc_puani"], d_analiz["dep_data"]["league_coef"])
                 
-                ev_deger_raw, ev_deger_str = takim_degeri_hesapla(ev_guc_puani, ev_data["league_coef"])
-                dep_deger_raw, dep_deger_str = takim_degeri_hesapla(dep_guc_puani, dep_data["league_coef"])
+                toplam_xg = d_analiz["ev_xg"] + d_analiz["dep_xg"]
                 
-                ort_guc = (ev_guc_puani + dep_guc_puani) / 2
-                ev_guc_carpani, dep_guc_carpani = min(max(ev_guc_puani/ort_guc, 0.2), 3.0), min(max(dep_guc_puani/ort_guc, 0.2), 3.0)
-                
-                ev_temel_xg = ((ev_data["g_for_saha"]+dep_data["g_ag_saha"])/2) * lig_karakteristik["xg_mod"] * hoca_ev["xg_carpan"] * ev_guc_carpani
-                dep_temel_xg = ((dep_data["g_for_saha"]+ev_data["g_ag_saha"])/2) * lig_karakteristik["xg_mod"] * hoca_dep["xg_carpan"] * dep_guc_carpani
-                
-                ev_gercek_xg = max(0.1, (ev_temel_xg*0.7) + (h2h_data["h_avg"]*0.3)) if h2h_data else max(0.1, ev_temel_xg)
-                dep_gercek_xg = max(0.1, (dep_temel_xg*0.7) + (h2h_data["a_avg"]*0.3)) if h2h_data else max(0.1, dep_temel_xg)
-                toplam_xg = ev_gercek_xg + dep_gercek_xg
-                
-                ev_g_yuku, dep_g_yuku = gol_yuku_hesapla(ev_data["g_for_genel"], ev_data["g_ag_genel"]), gol_yuku_hesapla(dep_data["g_for_genel"], dep_data["g_ag_genel"])
-                ev_yorgun = ev_data["dinlenme_gunu"] < 4
-
-                ms_m = skor_olasiliklarini_hesapla(ev_gercek_xg, dep_gercek_xg, ev_g_yuku, dep_g_yuku, is_kupa, ev_yorgun)
-                iy_skor_str, iy2_skor_str = skor_dagit(ms_m['skor'])
-                
-                iy_m = skor_olasiliklarini_hesapla(ev_gercek_xg * 0.45, dep_gercek_xg * 0.45, ev_g_yuku, dep_g_yuku, is_kupa, ev_yorgun)
-                iy_m['skor'] = iy_skor_str 
-                iy2_m = skor_olasiliklarini_hesapla(ev_gercek_xg * 0.55, dep_gercek_xg * 0.55, ev_g_yuku, dep_g_yuku, is_kupa, ev_yorgun)
-                iy2_m['skor'] = iy2_skor_str 
-                
-                ms_yan = yan_bahisleri_hesapla(toplam_xg, lig_karakteristik, hakem_profil, hoca_ev, hoca_dep, 1.0)
-                iy_yan = yan_bahisleri_hesapla(toplam_xg, lig_karakteristik, hakem_profil, hoca_ev, hoca_dep, 0.45)
-                iy2_yan = yan_bahisleri_hesapla(toplam_xg, lig_karakteristik, hakem_profil, hoca_ev, hoca_dep, 0.55)
+                ms_yan = yan_bahisleri_hesapla(toplam_xg, lig_karakteristik, hakem_profil, d_analiz["hoca_ev"], d_analiz["hoca_dep"], 1.0)
+                iy_yan = yan_bahisleri_hesapla(toplam_xg, lig_karakteristik, hakem_profil, d_analiz["hoca_ev"], d_analiz["hoca_dep"], 0.45)
+                iy2_yan = yan_bahisleri_hesapla(toplam_xg, lig_karakteristik, hakem_profil, d_analiz["hoca_ev"], d_analiz["hoca_dep"], 0.55)
                 
                 st.session_state["analiz_datasi"] = {
-                    "ev_data": ev_data, "dep_data": dep_data, "h2h_data": h2h_data, "sakatlar": sakatlar,
-                    "ev_xg": ev_gercek_xg, "dep_xg": dep_gercek_xg, "ev_guc_puani": ev_guc_puani, "dep_guc_puani": dep_guc_puani,
+                    "ev_data": d_analiz["ev_data"], "dep_data": d_analiz["dep_data"], "h2h_data": d_analiz["h2h_data"], "sakatlar": d_analiz["sakatlar"],
+                    "ev_xg": d_analiz["ev_xg"], "dep_xg": d_analiz["dep_xg"], "ev_guc_puani": d_analiz["ev_guc_puani"], "dep_guc_puani": d_analiz["dep_guc_puani"],
                     "ev_deger_str": ev_deger_str, "dep_deger_str": dep_deger_str, "ev_deger_raw": ev_deger_raw, "dep_deger_raw": dep_deger_raw, 
                     "h_sira_str": h_sira_str, "a_sira_str": a_sira_str, "h_rank_int": h_rank_int, "a_rank_int": a_rank_int,
                     "kadro_resmi": kadro_verisi["resmi"], "h_kadro": kadro_verisi["h_kadro"], "a_kadro": kadro_verisi["a_kadro"],
-                    "hakem_profil": hakem_profil, "hoca_ev": hoca_ev, "hoca_dep": hoca_dep, "hava_ad": hava_ad, "hava_detay": hava_detay,
-                    "ms_m": ms_m, "iy_m": iy_m, "iy2_m": iy2_m, "ms_yan": ms_yan, "iy_yan": iy_yan, "iy2_yan": iy2_yan
+                    "hakem_profil": hakem_profil, "hoca_ev": d_analiz["hoca_ev"], "hoca_dep": d_analiz["hoca_dep"], "hava_ad": hava_ad, "hava_detay": hava_detay,
+                    "ms_m": d_analiz["ms_m"], "iy_m": d_analiz["iy_m"], "iy2_m": d_analiz["iy2_m"], 
+                    "ms_yan": ms_yan, "iy_yan": iy_yan, "iy2_yan": iy2_yan
                 }
                 st.session_state["analiz_yapildi"] = True
+
+    # SEKMELER
+    tab_genel, tab_iy, tab_ikinci_yari, tab_ms, tab_value, tab_top_value, tab_surpriz = st.tabs([
+        "🎯 Genel Rapor", "⏱️ 1. Yarı", "⏱️ 2. Yarı", "🏆 Maç Sonu", 
+        "💎 Value Bahis", "🌟 Tüm Ligler Top Value", "🔮 Sürpriz Tahminler"
+    ])
 
     with tab_genel:
         if st.session_state.get("analiz_yapildi", False):
@@ -522,19 +580,16 @@ with col_sag:
             </div>
             """, unsafe_allow_html=True)
             
-            # YENİ EKLENEN İLK 11'LER VE DİNAMİK RENK MANTIĞI
             kadro_etiket = "✅ RESMİ İLK 11'LER AÇIKLANDI" if d['kadro_resmi'] else "⚠️ TAHMİNİ İLK 11 (Son Maç Kadrosu)"
             kadro_renk = "#34d399" if d['kadro_resmi'] else "#fbbf24"
             h_kadro_txt = ", ".join(d['h_kadro']) if d['h_kadro'] else "Veri Yok"
             a_kadro_txt = ", ".join(d['a_kadro']) if d['a_kadro'] else "Veri Yok"
 
-            # Sıralama Yarışı ve Renklendirmesi
             h_rank, a_rank = d['h_rank_int'], d['a_rank_int']
             h_rank_c = "#34d399" if h_rank < a_rank else ("#ef4444" if h_rank > a_rank else "#fff")
             a_rank_c = "#34d399" if a_rank < h_rank else ("#ef4444" if a_rank > h_rank else "#fff")
             sir_yaris = " <span style='font-size:11.5px; color:#fbbf24;'>(🏆 Sıralama Yarışında)</span>" if h_rank != 999 else ""
 
-            # Kadro Değeri Renklendirmesi
             ev_v, dep_v = d['ev_deger_raw'], d['dep_deger_raw']
             h_val_c = "#34d399" if ev_v > dep_v else ("#ef4444" if ev_v < dep_v else "#fff")
             a_val_c = "#34d399" if dep_v > ev_v else ("#ef4444" if dep_v < ev_v else "#fff")
@@ -578,13 +633,12 @@ with col_sag:
             a_eksik_str = ', '.join(d['sakatlar']['a_onemli']) if d['sakatlar']['a_onemli'] else 'Yok'
             st.markdown(f"""
             <div style="background-color: #111827; border-radius: 8px; padding: 15px; border: 1px solid #ef4444; margin-bottom: 25px;">
-                <h4 style="color: #ef4444; margin-top: 0; margin-bottom: 10px;">🚑 Kritik Eksik Raporu (Sadece As ve Rotasyon)</h4>
+                <h4 style="color: #ef4444; margin-top: 0; margin-bottom: 10px;">🚑 Sakat/Cezalı Raporu</h4>
                 <p style="color: #ffffff; font-size: 14px; margin: 5px 0;"><b>{ev_sahibi}:</b> {h_eksik_str}</p>
                 <p style="color: #ffffff; font-size: 14px; margin: 5px 0;"><b>{deplasman}:</b> {a_eksik_str}</p>
             </div>
             """, unsafe_allow_html=True)
 
-            # --- İSTATİSTİK KARŞILAŞTIRMASI & BASİTLEŞTİRİLMİŞ XG ---
             st.markdown("### ⚔️ İstatistik Karşılaştırması")
             html_icerik = [
                 f'<div style="background-color: #111827; border-radius: 8px; padding: 15px; border: 1px solid #1e3a8a;">',
@@ -602,12 +656,20 @@ with col_sag:
                 f'</div>'
             ]
             st.markdown("".join(html_icerik), unsafe_allow_html=True)
+        else:
+            st.info("👆 Seçili maçın verilerini görmek için yukarıdaki 'V125 Master Mind Analizini Başlat' butonuna tıklayın.")
 
     with tab_iy:
-        if st.session_state.get("analiz_yapildi", False): render_taktik_kutu("1. Yarı", st.session_state["analiz_datasi"]["iy_m"], st.session_state["analiz_datasi"]["iy_yan"], ev_sahibi, deplasman)
+        if st.session_state.get("analiz_yapildi", False):
+            render_taktik_kutu("1. Yarı", st.session_state["analiz_datasi"]["iy_m"], st.session_state["analiz_datasi"]["iy_yan"], ev_sahibi, deplasman)
+        else:
+            st.info("👆 Seçili maçın verilerini görmek için yukarıdaki 'V125 Master Mind Analizini Başlat' butonuna tıklayın.")
 
     with tab_ikinci_yari:
-        if st.session_state.get("analiz_yapildi", False): render_taktik_kutu("2. Yarı", st.session_state["analiz_datasi"]["iy2_m"], st.session_state["analiz_datasi"]["iy2_yan"], ev_sahibi, deplasman)
+        if st.session_state.get("analiz_yapildi", False):
+            render_taktik_kutu("2. Yarı", st.session_state["analiz_datasi"]["iy2_m"], st.session_state["analiz_datasi"]["iy2_yan"], ev_sahibi, deplasman)
+        else:
+            st.info("👆 Seçili maçın verilerini görmek için yukarıdaki 'V125 Master Mind Analizini Başlat' butonuna tıklayın.")
 
     with tab_ms:
         if st.session_state.get("analiz_yapildi", False):
@@ -629,6 +691,8 @@ with col_sag:
                 heatmap_html += '</tr>'
             heatmap_html += '</table>'
             st.markdown(heatmap_html, unsafe_allow_html=True)
+        else:
+            st.info("👆 Seçili maçın verilerini görmek için yukarıdaki 'V125 Master Mind Analizini Başlat' butonuna tıklayın.")
 
     with tab_value:
         if st.session_state.get("analiz_yapildi", False):
@@ -665,3 +729,115 @@ with col_sag:
                     st.error("⚠️ Seçilen oran için matematiksel bir avantaj (Value/Edge) bulunamadı. Oran çok düşük kalmış.")
             else:
                 st.warning("⚠️ Güvenilir bir bahis bulunamadı.")
+        else:
+            st.info("👆 Seçili maçın verilerini görmek için yukarıdaki 'V125 Master Mind Analizini Başlat' butonuna tıklayın.")
+                
+    # --- TÜM LİGLER GLOBAL TOP VALUE ---
+    with tab_top_value:
+        st.markdown("### 🏆 Profesyonel Liglerdeki En Değerli (Value) Bahisler")
+        st.info("Bu araç sistemdeki İddaa oynanabilir majör ve profesyonel ligleri tarayarak en güvendiği tahminleri listeleyecektir.")
+        
+        if st.button("🔍 Tüm İddaa Bülteninde Fırsatları Tara", key="btn_scan_all_value"):
+            with st.spinner("Büyük ligler öncelikli olarak taranıyor, bu işlem maç sayısına göre biraz sürebilir..."):
+                tum_maclar_listesi = []
+                sirali_ligler_keys = ligleri_sirala(list(bulten_verisi.keys()))
+                
+                dislanacak_kelimeler = ["u19", "u21", "u20", "u23", "women", "kadınlar", "reserve", "amateur", "gençler", "paf", "youth"]
+                
+                for l_adi in sirali_ligler_keys:
+                    l_adi_kucuk = l_adi.lower()
+                    if any(x in l_adi_kucuk for x in dislanacak_kelimeler):
+                        continue
+                    tum_maclar_listesi.extend(bulten_verisi[l_adi]["maclar"])
+                
+                firsatlar = []
+                progress_bar_val = st.progress(0)
+                
+                for idx, m_obj in enumerate(tum_maclar_listesi):
+                    m_analiz = tekil_mac_analizi_yap(USER_API_KEY, m_obj, lig_karakteristik)
+                    progress_bar_val.progress((idx + 1) / len(tum_maclar_listesi))
+                    
+                    if m_analiz and m_analiz["en_iyi_bahis"]["bahis"] != "Yok":
+                        firsatlar.append({
+                            "mac": f"{m_obj['ev']} - {m_obj['dep']}",
+                            "saat": m_obj['saat'],
+                            "bahis": m_analiz["en_iyi_bahis"]["bahis"],
+                            "ihtimal": m_analiz["en_iyi_bahis"]["ihtimal"]
+                        })
+                        
+                if firsatlar:
+                    firsatlar = sorted(firsatlar, key=lambda x: x["ihtimal"], reverse=True)
+                    st.success(f"Tarama başarıyla tamamlandı! Toplam {len(tum_maclar_listesi)} maç analiz edildi.")
+                    for idx, f in enumerate(firsatlar[:15]): 
+                        st.markdown(f"**{idx+1}. {f['mac']}** (🕒 {f['saat']}) -> **{f['bahis']}** (Kazanma İhtimali: <span style='color:#34d399;'>%{f['ihtimal']*100:.1f}</span>)", unsafe_allow_html=True)
+                else:
+                    st.warning("Seçilen maçlarda değerlendirmeye uygun güçlü bir bahis bulunamadı.")
+                    
+    # --- SÜRPRİZ TAHMİNLER ---
+    with tab_surpriz:
+        st.markdown("### 🔮 Tüm Bülten Sürpriz Tahmin Avcısı")
+        st.info("Profesyonel liglerde 1'den 2, 2'den 1, İlk Yarı KG Var ve 6+ Gol gibi sürpriz ihtimalleri hesaplar.")
+        
+        if st.button("🔍 Sürprizleri Tara", key="btn_scan_surpriz"):
+            with st.spinner("Sürpriz matrisleri oluşturuluyor..."):
+                tum_maclar_listesi = []
+                sirali_ligler_keys = ligleri_sirala(list(bulten_verisi.keys()))
+                dislanacak_kelimeler = ["u19", "u21", "u20", "u23", "women", "kadınlar", "reserve", "amateur", "gençler", "paf", "youth"]
+                
+                for l_adi in sirali_ligler_keys:
+                    if any(x in l_adi.lower() for x in dislanacak_kelimeler):
+                        continue
+                    tum_maclar_listesi.extend(bulten_verisi[l_adi]["maclar"])
+                
+                liste_1_2 = []
+                liste_2_1 = []
+                liste_iy_kg = []
+                liste_ust_55 = []
+                
+                progress_bar = st.progress(0)
+                
+                for idx, m_obj in enumerate(tum_maclar_listesi):
+                    m_analiz = tekil_mac_analizi_yap(USER_API_KEY, m_obj, lig_karakteristik)
+                    progress_bar.progress((idx + 1) / len(tum_maclar_listesi))
+                    
+                    if m_analiz:
+                        mac_adi = f"{m_obj['ev']} - {m_obj['dep']}"
+                        s = m_analiz["surprizler"]
+                        
+                        if s["1/2"] > 0.02:
+                            liste_1_2.append({"mac": mac_adi, "saat": m_obj['saat'], "oran": s["1/2"]})
+                        if s["2/1"] > 0.02:
+                            liste_2_1.append({"mac": mac_adi, "saat": m_obj['saat'], "oran": s["2/1"]})
+                        if s["iy_kg"] > 0.35:
+                            liste_iy_kg.append({"mac": mac_adi, "saat": m_obj['saat'], "oran": s["iy_kg"]})
+                        if s["ust_55"] > 0.08:
+                            liste_ust_55.append({"mac": mac_adi, "saat": m_obj['saat'], "oran": s["ust_55"]})
+                            
+                st.success(f"Tarama Tamamlandı! {len(tum_maclar_listesi)} profesyonel maç içinden çıkan en yüksek ihtimalli sürprizler:")
+                
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.markdown("#### 🔄 1'den 2 (İlk Yarı 1 / Maç Sonu 2)")
+                    liste_1_2.sort(key=lambda x: x["oran"], reverse=True)
+                    for f in liste_1_2[:5]:
+                        st.markdown(f"**{f['mac']}** (🕒 {f['saat']}) -> İhtimal: <span style='color:#fbbf24;'>%{f['oran']*100:.1f}</span>", unsafe_allow_html=True)
+                    if not liste_1_2: st.write("Kriterlere uygun maç bulunamadı.")
+                    
+                    st.markdown("#### 🔄 2'den 1 (İlk Yarı 2 / Maç Sonu 1)")
+                    liste_2_1.sort(key=lambda x: x["oran"], reverse=True)
+                    for f in liste_2_1[:5]:
+                        st.markdown(f"**{f['mac']}** (🕒 {f['saat']}) -> İhtimal: <span style='color:#fbbf24;'>%{f['oran']*100:.1f}</span>", unsafe_allow_html=True)
+                    if not liste_2_1: st.write("Kriterlere uygun maç bulunamadı.")
+                    
+                with col2:
+                    st.markdown("#### ⚽ İY Karşılıklı Gol Var")
+                    liste_iy_kg.sort(key=lambda x: x["oran"], reverse=True)
+                    for f in liste_iy_kg[:5]:
+                        st.markdown(f"**{f['mac']}** (🕒 {f['saat']}) -> İhtimal: <span style='color:#34d399;'>%{f['oran']*100:.1f}</span>", unsafe_allow_html=True)
+                    if not liste_iy_kg: st.write("Kriterlere uygun maç bulunamadı.")
+                    
+                    st.markdown("#### 🚀 6+ Gol (5.5 Üst)")
+                    liste_ust_55.sort(key=lambda x: x["oran"], reverse=True)
+                    for f in liste_ust_55[:5]:
+                        st.markdown(f"**{f['mac']}** (🕒 {f['saat']}) -> İhtimal: <span style='color:#ef4444;'>%{f['oran']*100:.1f}</span>", unsafe_allow_html=True)
+                    if not liste_ust_55: st.write("Kriterlere uygun maç bulunamadı.")
